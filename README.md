@@ -10,10 +10,10 @@ This is the final project for CEE 6501 Matrix Structural Analysis which will imp
 
 ## How to run
 1. Open 'main.ipynb'
-2. Modify input file in '/inputs'
+2. Modify input file in inputs folder
 3. Runn all cells
 
 ## Structure
-- 'helpers/' will contain the main functions
-- 'inputs/' will contain the models I will be using
-- 'outputs/' will contain the results
+- The helpers folder will contain the main functions
+- The inputs folder will contain the models I will be using
+- The outputs folder will store the results
