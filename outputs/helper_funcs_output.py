@@ -37,7 +37,7 @@ def print_dsm_results_3d(
 
     df = pd.DataFrame(
         rows,
-        columns=["DOF", "Type", "Status", "Disp", "Disp Unit", "Force / Reaction"],
+        columns=["DOF", "Type", "Status", "Disp", "Unit", "Force / Reaction"],
     )
 
     print(df.to_string(index=False))
@@ -66,9 +66,15 @@ def print_element_results_3d(element_results, dec=4):
     print(df.to_string(index=False))
 
 
-def plot_structure_3d(nodes, elements, u_global, scale=1.0):
+def plot_structure_3d(nodes, elements, u_global, scale=1.0, save_path=None):
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    import numpy as np
+
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
+
+    sorted_nodes = sorted(nodes.keys())
 
     for elem_id, elem in elements.items():
         ni, nj = elem["nodes"]
@@ -76,20 +82,14 @@ def plot_structure_3d(nodes, elements, u_global, scale=1.0):
         xi, yi, zi = nodes[ni]
         xj, yj, zj = nodes[nj]
 
-        dof_i = 6 * (sorted(nodes.keys()).index(ni))
-        dof_j = 6 * (sorted(nodes.keys()).index(nj))
+        i_idx = sorted_nodes.index(ni)
+        j_idx = sorted_nodes.index(nj)
 
-        ui = u_global[dof_i:dof_i+3]
-        uj = u_global[dof_j:dof_j+3]
+        ui = u_global[6*i_idx:6*i_idx+3]
+        uj = u_global[6*j_idx:6*j_idx+3]
 
         # original
-        ax.plot(
-            [xi, xj],
-            [yi, yj],
-            [zi, zj],
-            "k-",
-            linewidth=1.5,
-        )
+        ax.plot([xi, xj], [yi, yj], [zi, zj], "k-", linewidth=1.5)
 
         # deformed
         ax.plot(
@@ -103,5 +103,9 @@ def plot_structure_3d(nodes, elements, u_global, scale=1.0):
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
-    ax.set_title(f"Original (black) and Deformed (red), scale = {scale}")
+    ax.set_title(f"Deformed Shape (scale = {scale})")
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
     plt.show()
