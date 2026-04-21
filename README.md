@@ -10,10 +10,10 @@ This is the final project for CEE 6501 Matrix Structural Analysis which will imp
 
 ## How to run
 1. Open 'main.ipynb'
-2. Modify input file in inputs folder
-3. Runn all cells
+2. Modify input name in quotes "" of either "example1", "example2", "structure", "case_1_study", "case_2_study", "user_added"
+3. Run all cells
 
 ## Structure
-- The helpers folder will contain the main functions
-- The inputs folder will contain the models I will be using
-- The outputs folder will store the results
+- The helpers folder will contain the main function where all the calculations happens
+- The inputs folder will contain the models I will be using or any that the user wants to add
+- The outputs folder will store the results in a .json file along with a .png of the deformed results
