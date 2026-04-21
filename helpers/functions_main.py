@@ -1,6 +1,7 @@
 import os
 import json
 import numpy as np
+import pandas as pd
 
 
 def load_model(filename):
@@ -274,17 +275,18 @@ def create_clean_results(results, input_file):
         "nodal_displacements": nodal_displacements,
         "support_reactions": support_reactions,
         "element_results": clean_element_results,
-        "deformed_shape_plot": f"outputs/{base_name}_deformed_shape.png",
+        "deformed_shape_plot": f"outputs/{base_name}/{base_name}_deformed_shape.png"
     }
 
     return clean_results
 
 
 def save_results_to_json(results, input_file):
-    os.makedirs("outputs", exist_ok=True)
-
     base_name = os.path.splitext(os.path.basename(input_file))[0]
-    output_file = os.path.join("outputs", base_name + "_results.json")
+    output_folder = os.path.join("outputs", base_name)
+    os.makedirs(output_folder, exist_ok=True)
+
+    output_file = os.path.join(output_folder, base_name + "_results.json")
 
     clean_results = create_clean_results(results, input_file)
 
@@ -292,6 +294,29 @@ def save_results_to_json(results, input_file):
         json.dump(clean_results, f, indent=4)
 
     print(f"Results saved to: {output_file}")
+
+def save_results_to_tables(results, input_file):
+    base_name = os.path.splitext(os.path.basename(input_file))[0]
+    output_folder = os.path.join("outputs", base_name)
+    os.makedirs(output_folder, exist_ok=True)
+
+    clean_results = create_clean_results(results, input_file)
+
+    df_disp = pd.DataFrame(clean_results["nodal_displacements"])
+    df_react = pd.DataFrame(clean_results["support_reactions"])
+    df_elem = pd.DataFrame(clean_results["element_results"])
+
+    disp_file = os.path.join(output_folder, base_name + "_nodal_displacements.csv")
+    react_file = os.path.join(output_folder, base_name + "_support_reactions.csv")
+    elem_file = os.path.join(output_folder, base_name + "_element_results.csv")
+
+    df_disp.to_csv(disp_file, index=False)
+    df_react.to_csv(react_file, index=False)
+    df_elem.to_csv(elem_file, index=False)
+
+    print(f"Nodal displacements table saved to: {disp_file}")
+    print(f"Support reactions table saved to: {react_file}")
+    print(f"Element results table saved to: {elem_file}")
 
 
 def functions_main(input_file):
@@ -474,5 +499,7 @@ def functions_main(input_file):
     }
 
     save_results_to_json(results, input_file)
+    save_results_to_json(results, input_file)
+    save_results_to_tables(results, input_file)
 
     return results

@@ -427,5 +427,5 @@
             "axial_force": 0.0
         }
     ],
-    "deformed_shape_plot": "outputs/example1_deformed_shape.png"
+    "deformed_shape_plot": "outputs/example1/example1_deformed_shape.png"
 }
