@@ -2,6 +2,7 @@ import os
 import json
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 def load_model(filename):
@@ -12,8 +13,10 @@ def load_model(filename):
     elements = {int(k): v for k, v in model["elements"].items()}
     supports = {int(k): v for k, v in model.get("supports", {}).items()}
     nodal_loads = {int(k): v for k, v in model.get("nodal_loads", {}).items()}
+    member_loads = {int(k): v for k, v in model.get("member_loads", {}).items()}
+    temperature_loads = {int(k): v for k, v in model.get("temperature_loads", {}).items()}
 
-    return nodes, elements, supports, nodal_loads
+    return nodes, elements, supports, nodal_loads, member_loads, temperature_loads
 
 
 def get_node_dof_map(nodes):
@@ -105,6 +108,55 @@ def k_global_3d_truss(E, A, xi, yi, zi, xj, yj, zj):
     ], dtype=float)
 
     return L, k
+
+
+def frame_uniform_load_fef_local(wy, wz, L):
+    q = np.zeros(12)
+
+    q += np.array([
+        0.0,
+        wy * L / 2.0,
+        0.0,
+        0.0,
+        0.0,
+        wy * L**2 / 12.0,
+        0.0,
+        wy * L / 2.0,
+        0.0,
+        0.0,
+        0.0,
+        -wy * L**2 / 12.0,
+    ])
+
+    q += np.array([
+        0.0,
+        0.0,
+        wz * L / 2.0,
+        0.0,
+        -wz * L**2 / 12.0,
+        0.0,
+        0.0,
+        0.0,
+        wz * L / 2.0,
+        0.0,
+        wz * L**2 / 12.0,
+        0.0,
+    ])
+
+    return q
+
+
+def temperature_fef_truss(E, A, alpha, deltaT):
+    force = E * A * alpha * deltaT
+    return np.array([-force, 0.0, 0.0, force, 0.0, 0.0], dtype=float)
+
+
+def temperature_fef_frame(E, A, alpha, deltaT):
+    force = E * A * alpha * deltaT
+    return np.array([
+        -force, 0.0, 0.0, 0.0, 0.0, 0.0,
+         force, 0.0, 0.0, 0.0, 0.0, 0.0
+    ], dtype=float)
 
 
 def build_global_load_vector(nodes, dof_map, nodal_loads):
@@ -216,6 +268,54 @@ def assemble_global_forces(f_f, F_r, free_dofs, restrained_dofs):
     return f_global
 
 
+def save_deformed_shape_plot(results, input_file, scale=5.0):
+    base_name = os.path.splitext(os.path.basename(input_file))[0]
+    output_folder = os.path.join("outputs", base_name)
+    os.makedirs(output_folder, exist_ok=True)
+
+    plot_file = os.path.join(output_folder, base_name + "_deformed_shape.png")
+
+    nodes = results["nodes"]
+    elements = results["elements"]
+    u_global = results["u_global"]
+    sorted_nodes = sorted(nodes.keys())
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection="3d")
+
+    for elem_id, elem in elements.items():
+        ni, nj = elem["nodes"]
+
+        xi, yi, zi = nodes[ni]
+        xj, yj, zj = nodes[nj]
+
+        i_idx = sorted_nodes.index(ni)
+        j_idx = sorted_nodes.index(nj)
+
+        ui = u_global[6 * i_idx:6 * i_idx + 3]
+        uj = u_global[6 * j_idx:6 * j_idx + 3]
+
+        ax.plot([xi, xj], [yi, yj], [zi, zj], "k-", linewidth=1.5)
+
+        ax.plot(
+            [xi + scale * ui[0], xj + scale * uj[0]],
+            [yi + scale * ui[1], yj + scale * uj[1]],
+            [zi + scale * ui[2], zj + scale * uj[2]],
+            "r--",
+            linewidth=1.5,
+        )
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    ax.set_title(f"Original (black) and Deformed (red), scale = {scale}")
+
+    plt.savefig(plot_file, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"Deformed shape plot saved to: {plot_file}")
+
+
 def create_clean_results(results, input_file):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     nodes = results["nodes"]
@@ -295,6 +395,7 @@ def save_results_to_json(results, input_file):
 
     print(f"Results saved to: {output_file}")
 
+
 def save_results_to_tables(results, input_file):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     output_folder = os.path.join("outputs", base_name)
@@ -320,7 +421,7 @@ def save_results_to_tables(results, input_file):
 
 
 def functions_main(input_file):
-    nodes, elements, supports, nodal_loads = load_model(input_file)
+    nodes, elements, supports, nodal_loads, member_loads, temperature_loads = load_model(input_file)
 
     dof_map = get_node_dof_map(nodes)
     ndof = 6 * len(nodes)
@@ -347,6 +448,11 @@ def functions_main(input_file):
             k_local = k_global
             T = np.eye(6)
             Qf = np.zeros(6)
+
+            if elem_id in temperature_loads:
+                alpha = temperature_loads[elem_id].get("alpha", 0.0)
+                deltaT = temperature_loads[elem_id].get("deltaT", 0.0)
+                Qf += temperature_fef_truss(E, A, alpha, deltaT)
 
             dofs_i = dof_map[ni][0:3]
             dofs_j = dof_map[nj][0:3]
@@ -380,6 +486,16 @@ def functions_main(input_file):
             k_local = k_local_3d_frame(E, G, A, I, J, L)
             T = T_3d_frame_rotation(R)
             Qf = np.zeros(12)
+
+            if elem_id in member_loads:
+                wy = member_loads[elem_id].get("wy", 0.0)
+                wz = member_loads[elem_id].get("wz", 0.0)
+                Qf += frame_uniform_load_fef_local(wy, wz, L)
+
+            if elem_id in temperature_loads:
+                alpha = temperature_loads[elem_id].get("alpha", 0.0)
+                deltaT = temperature_loads[elem_id].get("deltaT", 0.0)
+                Qf += temperature_fef_frame(E, A, alpha, deltaT)
 
             elem_map = dof_map[ni] + dof_map[nj]
 
@@ -488,6 +604,8 @@ def functions_main(input_file):
         "elements": elements,
         "supports": supports,
         "nodal_loads": nodal_loads,
+        "member_loads": member_loads,
+        "temperature_loads": temperature_loads,
         "dof_map": dof_map,
         "ndof": ndof,
         "K_global": K_global,
@@ -499,7 +617,7 @@ def functions_main(input_file):
     }
 
     save_results_to_json(results, input_file)
-    save_results_to_json(results, input_file)
     save_results_to_tables(results, input_file)
+    save_deformed_shape_plot(results, input_file, scale=5)
 
     return results
