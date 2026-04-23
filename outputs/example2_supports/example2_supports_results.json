@@ -1,5 +1,5 @@
 {
-    "model_name": "example2",
+    "model_name": "example2_supports",
     "summary": {
         "number_of_nodes": 8,
         "number_of_elements": 10,
@@ -199,5 +199,5 @@
             "axial_force": -48.998881799948364
         }
     ],
-    "deformed_shape_plot": "outputs/example2/example2_deformed_shape.png"
+    "deformed_shape_plot": "outputs/example2_supports/example2_supports_deformed_shape.png"
 }

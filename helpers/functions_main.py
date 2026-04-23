@@ -4,7 +4,21 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from helper_funcs_output import save_load_plot_3d
 
+
+# -------------------------------------------------------
+# 1. READ MODEL INPUT FILE
+# -------------------------------------------------------
+# This function reads the .json input file and pulls out the main model information:
+# - nodes
+# - elements
+# - supports
+# - nodal loads
+# - member loads
+# - temperature loads
+# - Support Displacements
+# - Fabrication errors
 def load_model(filename):
     with open(filename, "r") as f:
         model = json.load(f)
@@ -15,9 +29,26 @@ def load_model(filename):
     nodal_loads = {int(k): v for k, v in model.get("nodal_loads", {}).items()}
     member_loads = {int(k): v for k, v in model.get("member_loads", {}).items()}
     temperature_loads = {int(k): v for k, v in model.get("temperature_loads", {}).items()}
+    gradient_temperature_loads = {int(k): v for k, v in model.get("gradient_temperature_loads", {}).items()}
+    support_displacements = {int(k): v for k, v in model.get("support_displacements", {}).items()}
+    fabrication_error_loads = {int(k): v for k, v in model.get("fabrication_error_loads", {}).items()}
 
-    return nodes, elements, supports, nodal_loads, member_loads, temperature_loads
+    return (
+        nodes,
+        elements,
+        supports,
+        nodal_loads,
+        member_loads,
+        temperature_loads,
+        gradient_temperature_loads,
+        support_displacements,
+        fabrication_error_loads,
+    )
 
+
+# -------------------------------------------------------
+# 2. CREATE GLOBAL DOF MAP
+# -------------------------------------------------------
 
 def get_node_dof_map(nodes):
     dof_map = {}
@@ -29,6 +60,10 @@ def get_node_dof_map(nodes):
 
     return dof_map
 
+
+# -------------------------------------------------------
+# 3. LOCAL AXES FOR A 3D FRAME ELEMENT
+# -------------------------------------------------------
 
 def local_axes_from_element(xi, yi, zi, xj, yj, zj):
     x_vec = np.array([xj - xi, yj - yi, zj - zi], dtype=float)
@@ -52,6 +87,10 @@ def local_axes_from_element(xi, yi, zi, xj, yj, zj):
     R = np.vstack((ex, ey, ez))
     return L, R
 
+
+# -------------------------------------------------------
+# 4. LOCAL STIFFNESS MATRIX FOR A 3D FRAME ELEMENT
+# -------------------------------------------------------
 
 def k_local_3d_frame(E, G, A, I, J, L):
     EA_L = E * A / L
@@ -78,6 +117,10 @@ def k_local_3d_frame(E, G, A, I, J, L):
     return k
 
 
+# -------------------------------------------------------
+# 5. BUILD 12x12 TRANSFORMATION MATRIX FOR FRAME ELEMENT
+# -------------------------------------------------------
+
 def T_3d_frame_rotation(R):
     T = np.zeros((12, 12), dtype=float)
     T[0:3, 0:3] = R
@@ -86,6 +129,10 @@ def T_3d_frame_rotation(R):
     T[9:12, 9:12] = R
     return T
 
+
+# -------------------------------------------------------
+# 6. GLOBAL STIFFNESS MATRIX FOR A 3D TRUSS ELEMENT
+# -------------------------------------------------------
 
 def k_global_3d_truss(E, A, xi, yi, zi, xj, yj, zj):
     dx = xj - xi
@@ -109,6 +156,10 @@ def k_global_3d_truss(E, A, xi, yi, zi, xj, yj, zj):
 
     return L, k
 
+
+# -------------------------------------------------------
+# 7. FRAME MEMBER UNIFORM LOAD FIXED-END FORCES
+# -------------------------------------------------------
 
 def frame_uniform_load_fef_local(wy, wz, L):
     q = np.zeros(12)
@@ -146,6 +197,10 @@ def frame_uniform_load_fef_local(wy, wz, L):
     return q
 
 
+# -------------------------------------------------------
+# 8. TEMPERATURE LOAD FIXED-END FORCES
+# -------------------------------------------------------
+
 def temperature_fef_truss(E, A, alpha, deltaT):
     force = E * A * alpha * deltaT
     return np.array([-force, 0.0, 0.0, force, 0.0, 0.0], dtype=float)
@@ -158,6 +213,69 @@ def temperature_fef_frame(E, A, alpha, deltaT):
          force, 0.0, 0.0, 0.0, 0.0, 0.0
     ], dtype=float)
 
+def temperature_gradient_fef_frame(I, E, alpha, deltaTz, depth_z):
+    """
+    Simple fixed-end moments for a linear temperature gradient
+    across the member depth.
+
+    deltaTz = temperature difference across the depth
+    depth_z = member depth
+
+    Uses the same I already in your code.
+    """
+
+    q = np.zeros(12)
+
+    if abs(depth_z) < 1e-12:
+        return q
+
+    M = E * I * alpha * (deltaTz / depth_z)
+
+    # moment pair causing bending about local y
+    # if curvature comes out opposite of what you expect,
+    # flip the sign of deltaTz in the JSON
+    q += np.array([
+        0.0, 0.0, 0.0, 0.0, -M, 0.0,
+        0.0, 0.0, 0.0, 0.0,  M, 0.0
+    ], dtype=float)
+
+    return q
+
+# -------------------------------------------------------
+# 9. FABRICATION ERROR LOAD FIXED-END FORCES
+# -------------------------------------------------------
+
+def fabrication_error_fef_truss(E, A, deltaL, L):
+    force = E * A * (deltaL / L)
+    return np.array([-force, 0.0, 0.0, force, 0.0, 0.0], dtype=float)
+
+
+def fabrication_error_fef_frame(E, A, deltaL, L):
+    force = E * A * (deltaL / L)
+    return np.array([
+        -force, 0.0, 0.0, 0.0, 0.0, 0.0,
+         force, 0.0, 0.0, 0.0, 0.0, 0.0
+    ], dtype=float)
+
+# -------------------------------------------------------
+# 10. SUPPORT DISPLACEMENT
+# -------------------------------------------------------
+
+def build_known_displacement_vector(nodes, dof_map, support_displacements):
+    ndof = 6 * len(nodes)
+    u_known = np.zeros(ndof)
+
+    for node_id, disp_vals in support_displacements.items():
+        node_dofs = dof_map[node_id]
+        for i in range(6):
+            u_known[node_dofs[i] - 1] = disp_vals[i]
+
+    return u_known
+
+
+# -------------------------------------------------------
+# 11. BUILD GLOBAL NODAL LOAD VECTOR
+# -------------------------------------------------------
 
 def build_global_load_vector(nodes, dof_map, nodal_loads):
     ndof = 6 * len(nodes)
@@ -171,6 +289,10 @@ def build_global_load_vector(nodes, dof_map, nodal_loads):
     return f
 
 
+# -------------------------------------------------------
+# 12. BUILD LIST OF RESTRAINED DOFS
+# -------------------------------------------------------
+
 def build_restrained_dofs(dof_map, supports):
     restrained = []
 
@@ -182,6 +304,10 @@ def build_restrained_dofs(dof_map, supports):
 
     return restrained
 
+
+# -------------------------------------------------------
+# 13. ASSEMBLE GLOBAL STIFFNESS MATRIX AND GLOBAL FEF
+# -------------------------------------------------------
 
 def assemble_global_stiffness_and_fef(ndof, k_list, T_list, Qf_list, map_list):
     K_global = np.zeros((ndof, ndof), dtype=float)
@@ -210,6 +336,10 @@ def assemble_global_stiffness_and_fef(ndof, k_list, T_list, Qf_list, map_list):
 
     return K_global, F_fef_global
 
+
+# -------------------------------------------------------
+# 14. PARTITION THE SYSTEM
+# -------------------------------------------------------
 
 def partition_system(K, f, u, f_fef, dof_restrained_1based):
     ndof = K.shape[0]
@@ -245,6 +375,10 @@ def partition_system(K, f, u, f_fef, dof_restrained_1based):
     )
 
 
+# -------------------------------------------------------
+# 15. REBUILD FULL GLOBAL DISPLACEMENT VECTOR
+# -------------------------------------------------------
+
 def assemble_global_displacements(u_f, u_r, free_dofs, restrained_dofs):
     ndof_total = len(free_dofs) + len(restrained_dofs)
     u_global = np.zeros(ndof_total)
@@ -258,6 +392,10 @@ def assemble_global_displacements(u_f, u_r, free_dofs, restrained_dofs):
     return u_global
 
 
+# -------------------------------------------------------
+# 16. REBUILD FULL GLOBAL FORCE VECTOR
+# -------------------------------------------------------
+
 def assemble_global_forces(f_f, F_r, free_dofs, restrained_dofs):
     ndof_total = len(free_dofs) + len(restrained_dofs)
     f_global = np.zeros(ndof_total)
@@ -268,7 +406,11 @@ def assemble_global_forces(f_f, F_r, free_dofs, restrained_dofs):
     return f_global
 
 
-def save_deformed_shape_plot(results, input_file, scale=5.0):
+# -------------------------------------------------------
+# 17. SAVE DEFORMED SHAPE PLOT
+# -------------------------------------------------------
+
+def save_deformed_shape_plot(results, input_file, scale=15.0):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     output_folder = os.path.join("outputs", base_name)
     os.makedirs(output_folder, exist_ok=True)
@@ -315,6 +457,10 @@ def save_deformed_shape_plot(results, input_file, scale=5.0):
 
     print(f"Deformed shape plot saved to: {plot_file}")
 
+
+# -------------------------------------------------------
+# 18. CLEAN RESULTS FOR SAVING
+# -------------------------------------------------------
 
 def create_clean_results(results, input_file):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
@@ -381,6 +527,10 @@ def create_clean_results(results, input_file):
     return clean_results
 
 
+# -------------------------------------------------------
+# 19. SAVE RESULTS TO JSON
+# -------------------------------------------------------
+
 def save_results_to_json(results, input_file):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     output_folder = os.path.join("outputs", base_name)
@@ -395,6 +545,10 @@ def save_results_to_json(results, input_file):
 
     print(f"Results saved to: {output_file}")
 
+
+# -------------------------------------------------------
+# 20. SAVE RESULTS TO CSV TABLES
+# -------------------------------------------------------
 
 def save_results_to_tables(results, input_file):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
@@ -420,18 +574,47 @@ def save_results_to_tables(results, input_file):
     print(f"Element results table saved to: {elem_file}")
 
 
+# -------------------------------------------------------
+# 21. MAIN ANALYSIS FUNCTION
+# -------------------------------------------------------
+# This is the main DSM workflow:
+# 1. Reads the input file
+# 2. Builds the DOF map
+# 3. Loops through the elements
+# 4. Builds the stiffness + fixed-end forces
+# 5. Assembles the global system
+# 6. Applies the supports
+# 7. Solves for the unknown displacements
+# 8. Computes the reactions
+# 9. Recovers the element forces
+# 10. Saves the output files
+
 def functions_main(input_file):
-    nodes, elements, supports, nodal_loads, member_loads, temperature_loads = load_model(input_file)
+    (
+        nodes,
+        elements,
+        supports,
+        nodal_loads,
+        member_loads,
+        temperature_loads,
+        gradient_temperature_loads,
+        support_displacements,
+        fabrication_error_loads,
+    ) = load_model(input_file)
 
     dof_map = get_node_dof_map(nodes)
     ndof = 6 * len(nodes)
 
+    # Lists used during assembly
     k_list = []
     T_list = []
     Qf_list = []
     map_list = []
     element_results = []
 
+    # ---------------------------------------------------
+    # Element loop
+    # ---------------------------------------------------
     for elem_id, elem in elements.items():
         elem_type = elem["type"].lower()
         ni, nj = elem["nodes"]
@@ -453,6 +636,10 @@ def functions_main(input_file):
                 alpha = temperature_loads[elem_id].get("alpha", 0.0)
                 deltaT = temperature_loads[elem_id].get("deltaT", 0.0)
                 Qf += temperature_fef_truss(E, A, alpha, deltaT)
+            
+            if elem_id in fabrication_error_loads:
+                deltaL = fabrication_error_loads[elem_id].get("deltaL", 0.0)
+                Qf += fabrication_error_fef_truss(E, A, deltaL, L)
 
             dofs_i = dof_map[ni][0:3]
             dofs_j = dof_map[nj][0:3]
@@ -497,6 +684,16 @@ def functions_main(input_file):
                 deltaT = temperature_loads[elem_id].get("deltaT", 0.0)
                 Qf += temperature_fef_frame(E, A, alpha, deltaT)
 
+            if elem_id in gradient_temperature_loads:
+                alpha = gradient_temperature_loads[elem_id].get("alpha", 0.0)
+                deltaTz = gradient_temperature_loads[elem_id].get("deltaTz", 0.0)
+                depth_z = gradient_temperature_loads[elem_id].get("depth_z", 1.0)
+                Qf += temperature_gradient_fef_frame(I, E, alpha, deltaTz, depth_z)
+
+            if elem_id in fabrication_error_loads:
+                deltaL = fabrication_error_loads[elem_id].get("deltaL", 0.0)
+                Qf += fabrication_error_fef_frame(E, A, deltaL, L)
+
             elem_map = dof_map[ni] + dof_map[nj]
 
             k_list.append(k_local)
@@ -522,6 +719,7 @@ def functions_main(input_file):
         else:
             raise ValueError(f"Unknown element type: {elem_type}")
 
+
     K_global, F_fef_global = assemble_global_stiffness_and_fef(
         ndof,
         k_list,
@@ -533,7 +731,7 @@ def functions_main(input_file):
     f_global = build_global_load_vector(nodes, dof_map, nodal_loads)
     dof_restrained_1based = build_restrained_dofs(dof_map, supports)
 
-    u_known = np.zeros(ndof)
+    u_known = build_known_displacement_vector(nodes, dof_map, support_displacements)
 
     (
         K_ff,
@@ -606,6 +804,9 @@ def functions_main(input_file):
         "nodal_loads": nodal_loads,
         "member_loads": member_loads,
         "temperature_loads": temperature_loads,
+        "gradient_temperature_loads": gradient_temperature_loads,
+        "support_displacements": support_displacements,
+        "fabrication_error_loads": fabrication_error_loads,
         "dof_map": dof_map,
         "ndof": ndof,
         "K_global": K_global,
@@ -616,8 +817,17 @@ def functions_main(input_file):
         "element_results": element_results,
     }
 
+    # Save outputs
     save_results_to_json(results, input_file)
     save_results_to_tables(results, input_file)
-    save_deformed_shape_plot(results, input_file, scale=5)
+    save_deformed_shape_plot(results, input_file, scale=15)
+
+    save_load_plot_3d(
+    nodes,
+    elements,
+    nodal_loads,
+    member_loads,
+    input_file
+)
 
     return results

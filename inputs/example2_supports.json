@@ -45,9 +45,12 @@
 
   "temperature_loads": {},
 
-  "gradient_temperature_loads": {},
-
-  "support_displacements": {},
+  "support_displacements": {
+    "1":  [0.0, 0.0, 0.0, 0.0, 0.01, 0.0],
+    "4": [0.005, 0.0, -0.01, 0.0, 0.0, 0.0],
+    "5":  [0.0, 0.0, 0.0, 0.0, 0.01, 0.0],
+    "8": [0.005, 0.0, -0.01, 0.0, 0.0, 0.0]
+  },
 
   "fabrication_error_loads": {}
 }

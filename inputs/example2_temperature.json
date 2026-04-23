@@ -43,9 +43,17 @@
     "4": { "wy": -24.0, "wz": 0.0 }
   },
 
-  "temperature_loads": {},
+  "temperature_loads": {
+    "1": { "alpha": 0.000012, "deltaT": 10.0 },
+    "4": { "alpha": 0.000012, "deltaT": 10.0 }
+  },
 
-  "gradient_temperature_loads": {},
+  "gradient_temperature_loads": {
+    "2": { "alpha": 0.000012, "deltaTz": -10.0, "depth_z": 0.003},
+    "3": { "alpha": 0.000012, "deltaTz": -10.0, "depth_z": 0.003},
+    "5": { "alpha": 0.000012, "deltaTz": -10.0, "depth_z": 0.003},
+    "6": { "alpha": 0.000012, "deltaTz": -10.0, "depth_z": 0.003}
+  },
 
   "support_displacements": {},
 

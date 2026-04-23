@@ -45,9 +45,14 @@
 
   "temperature_loads": {},
 
-  "gradient_temperature_loads": {},
-
   "support_displacements": {},
 
-  "fabrication_error_loads": {}
+  "fabrication_error_loads": {
+    "1": { "deltaL": -0.003 },
+    "2": { "deltaL": -0.0015 },
+    "3": { "deltaL": -0.0015 },
+    "4": { "deltaL": -0.003 },
+    "5": { "deltaL": -0.0015 },
+    "6": { "deltaL": -0.0015 }
+  }
 }
