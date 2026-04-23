@@ -10,7 +10,7 @@ This is the final project for CEE 6501 Matrix Structural Analysis which will imp
 
 ## How to run
 1. Open 'main.ipynb'
-2. Modify input name in quotes "" of either "example1", "example2", "structure", "case_1_study", "case_2_study", "user_added"
+2. Modify input name in quotes "" of either "example1", "example2", "example2_supports', "example2_temperature", "example2_fab_err", "structure", "case_1_study", "case_2_study", "user_added"
 3. Run cell by clicking shift+enter
 
 ## Structure
